@@ -6,6 +6,9 @@
 #include <QQueue>
 #include <QMutex>
 #include <QWaitCondition>
+#include <array>
+
+#include <SDL_stdinc.h>
 
 class IVsyncSource {
 public:
@@ -22,6 +25,8 @@ public:
     }
 };
 
+
+
 class Pacer
 {
 public:
@@ -31,16 +36,22 @@ public:
 
     void submitFrame(AVFrame* frame);
 
-    bool initialize(SDL_Window* window, int maxVideoFps, bool enablePacing);
+    bool initialize(SDL_Window* window, int maxVideoFps, bool enablePacing, bool allowVsyncSource);
 
     void signalVsync();
 
     void renderOnMainThread();
 
+    // Add this method to signal RFI state
+    void setWaitingForRFI(bool waiting);
+    bool isWaitingForRFI() const { return m_WaitingForRFI; }
+
 private:
     static int vsyncThread(void* context);
 
     static int renderThread(void* context);
+
+    static int manualPacingThread(void* context);
 
     void handleVsync(int timeUntilNextVsyncMillis);
 
@@ -49,6 +60,15 @@ private:
     void renderFrame(AVFrame* frame);
 
     void dropFrameForEnqueue(QQueue<AVFrame*>& queue);
+
+    void startManualPacingThreadIfNeeded();
+    void initializeManualPacingState();
+    Uint64 getTimeNs() const;
+    Uint64 computeManualReleaseTimeNs(Uint64 nowNs);
+    void recordManualFrameInterval(Uint64 nowNs);
+    void sleepUntilNs(Uint64 targetNs);
+    bool isManualPacingEnabled() const;
+    void resetManualTimingState(Uint64 nowNs);
 
     QQueue<AVFrame*> m_RenderQueue;
     QQueue<AVFrame*> m_PacingQueue;
@@ -60,6 +80,7 @@ private:
     QWaitCondition m_VsyncSignalled;
     SDL_Thread* m_RenderThread;
     SDL_Thread* m_VsyncThread;
+    SDL_Thread* m_ManualPacingThread;
     bool m_Stopping;
 
     IVsyncSource* m_VsyncSource;
@@ -68,4 +89,24 @@ private:
     int m_DisplayFps;
     PVIDEO_STATS m_VideoStats;
     int m_RendererAttributes;
-};
+
+    bool m_ManualPacingActive;
+    Uint64 m_TargetFrameIntervalNs;
+    Uint64 m_FixedSafetyMarginNs;
+    Uint64 m_ManualStableTimingBaseNs;
+    Uint64 m_ManualStreamStartTimeNs;
+    Uint64 m_ManualLastFrameTimeNs;
+    Uint64 m_ManualLastPresentationTimeNs;
+    Uint64 m_ManualWarmupStartTimeNs;
+    Uint64 m_ManualMinFrameIntervalNs;
+    Uint64 m_ManualMaxFrameDeviationNs;
+    int m_ManualFrameSequenceNumber;
+    int m_ManualFrameCount;
+    int m_ManualWarmupFrameCount;
+    int m_ManualIntervalIndex;
+    bool m_ManualIsWarmingUp;
+    bool m_ManualBurstProtectionActive;
+    std::array<Uint64, 8> m_ManualRecentFrameIntervals;
+
+    bool m_WaitingForRFI;
+}; 

@@ -129,6 +129,11 @@ public:
     Q_PROPERTY(bool gamepadMouse MEMBER gamepadMouse NOTIFY gamepadMouseChanged)
     Q_PROPERTY(bool detectNetworkBlocking MEMBER detectNetworkBlocking NOTIFY detectNetworkBlockingChanged)
     Q_PROPERTY(bool showPerformanceOverlay MEMBER showPerformanceOverlay NOTIFY showPerformanceOverlayChanged)
+    Q_PROPERTY(bool enableSharpenFilter MEMBER enableSharpenFilter NOTIFY enableSharpenFilterChanged)
+    Q_PROPERTY(double sharpenStrength MEMBER sharpenStrength NOTIFY sharpenStrengthChanged)
+    Q_PROPERTY(double sharpenClamp MEMBER sharpenClamp NOTIFY sharpenClampChanged)
+    Q_PROPERTY(double sharpenRadius MEMBER sharpenRadius NOTIFY sharpenRadiusChanged)
+    Q_PROPERTY(double colorSaturation MEMBER colorSaturation NOTIFY colorSaturationChanged)
     Q_PROPERTY(AudioConfig audioConfig MEMBER audioConfig NOTIFY audioConfigChanged)
     Q_PROPERTY(VideoCodecConfig videoCodecConfig MEMBER videoCodecConfig NOTIFY videoCodecConfigChanged)
     Q_PROPERTY(bool enableHdr MEMBER enableHdr NOTIFY enableHdrChanged)
@@ -170,6 +175,11 @@ public:
     bool gamepadMouse;
     bool detectNetworkBlocking;
     bool showPerformanceOverlay;
+    bool enableSharpenFilter;
+    double sharpenStrength;
+    double sharpenClamp;
+    double sharpenRadius;
+    double colorSaturation;
     bool swapMouseButtons;
     bool muteOnFocusLoss;
     bool backgroundGamepad;
@@ -216,6 +226,11 @@ signals:
     void gamepadMouseChanged();
     void detectNetworkBlockingChanged();
     void showPerformanceOverlayChanged();
+    void enableSharpenFilterChanged();
+    void sharpenStrengthChanged();
+    void sharpenClampChanged();
+    void sharpenRadiusChanged();
+    void colorSaturationChanged();
     void mouseButtonsChanged();
     void muteOnFocusLossChanged();
     void backgroundGamepadChanged();
@@ -232,4 +247,3 @@ private:
 
     QQmlEngine* m_QmlEngine;
 };
-

@@ -11,6 +11,10 @@
 
 #include <libavutil/hwcontext_vulkan.h>
 
+#include <QString>
+#include <QList>
+
+#include <algorithm>
 #include <vector>
 #include <set>
 
@@ -101,7 +105,8 @@ void PlVkRenderer::overlayUploadComplete(void* opaque)
 PlVkRenderer::PlVkRenderer(bool hwaccel, IFFmpegRenderer *backendRenderer) :
     IFFmpegRenderer(RendererType::Vulkan),
     m_Backend(backendRenderer),
-    m_HwAccelBackend(hwaccel)
+    m_HwAccelBackend(hwaccel),
+    m_ActiveRenderParams(&pl_render_fast_params)
 {
     bool ok;
 
@@ -123,6 +128,19 @@ PlVkRenderer::~PlVkRenderer()
 {
     // The render context must have been cleaned up by now
     SDL_assert(!m_HasPendingSwapchainFrame);
+
+    if (m_RenderOptions != nullptr && m_SharpenHookIndex >= 0) {
+        pl_options_remove_hook_at(m_RenderOptions, m_SharpenHookIndex);
+        m_SharpenHookIndex = -1;
+    }
+
+    if (m_SharpenHook != nullptr) {
+        pl_mpv_user_shader_destroy(&m_SharpenHook);
+    }
+
+    if (m_RenderOptions != nullptr) {
+        pl_options_free(&m_RenderOptions);
+    }
 
     if (m_Vulkan != nullptr) {
         for (int i = 0; i < (int)SDL_arraysize(m_Overlays); i++) {
@@ -335,6 +353,183 @@ bool PlVkRenderer::tryInitializeDevice(VkPhysicalDevice device, VkPhysicalDevice
     return true;
 }
 
+bool PlVkRenderer::initializeRenderParams()
+{
+    m_ActiveRenderParams = &pl_render_fast_params;
+
+    if (m_RenderOptions != nullptr && m_SharpenHookIndex >= 0) {
+        pl_options_remove_hook_at(m_RenderOptions, m_SharpenHookIndex);
+        m_SharpenHookIndex = -1;
+    }
+
+    if (m_RenderOptions != nullptr) {
+        pl_options_free(&m_RenderOptions);
+    }
+
+    if (m_SharpenHook != nullptr) {
+        pl_mpv_user_shader_destroy(&m_SharpenHook);
+    }
+
+    m_SharpenShaderSource.clear();
+
+    if (m_Log == nullptr) {
+        return true;
+    }
+
+    m_RenderOptions = pl_options_alloc(m_Log);
+    if (m_RenderOptions == nullptr) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "pl_options_alloc() failed; using default libplacebo render parameters");
+        return true;
+    }
+
+    pl_options_reset(m_RenderOptions, &pl_render_fast_params);
+
+    configureColorAdjustments();
+    configureSharpenHook();
+
+    m_ActiveRenderParams = &m_RenderOptions->params;
+    return true;
+}
+
+void PlVkRenderer::configureSharpenHook()
+{
+    m_SharpenHookIndex = -1;
+    m_SharpenShaderSource.clear();
+
+    if (m_RenderOptions == nullptr || m_Vulkan == nullptr || m_Vulkan->gpu == nullptr) {
+        return;
+    }
+
+    QByteArray env = qgetenv("PLVK_SHARPEN");
+    double strength = 0.0;
+    double clamp = 0.05;
+    double radius = 1.0;
+    bool enabled = false;
+    bool envOverride = false;
+
+    if (!env.isEmpty()) {
+        const QList<QByteArray> tokens = env.split(',');
+
+        bool ok = false;
+        double parsedStrength = tokens.value(0).toDouble(&ok);
+        if (!ok) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "Invalid PLVK_SHARPEN value '%s'", env.constData());
+        }
+        else {
+            strength = parsedStrength;
+
+            if (tokens.size() > 1) {
+                double parsedClamp = tokens.value(1).toDouble(&ok);
+                if (ok) {
+                    clamp = parsedClamp;
+                }
+            }
+
+            if (tokens.size() > 2) {
+                double parsedRadius = tokens.value(2).toDouble(&ok);
+                if (ok) {
+                    radius = parsedRadius;
+                }
+            }
+
+            enabled = strength > 0.0;
+            envOverride = true;
+            if (!enabled) {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "Vulkan renderer sharpening disabled by PLVK_SHARPEN override");
+                return;
+            }
+        }
+    }
+    
+    if (!envOverride && m_SharpenConfig.enabled && m_SharpenConfig.strength > 0.0) {
+        strength = m_SharpenConfig.strength;
+        clamp = m_SharpenConfig.clamp;
+        radius = m_SharpenConfig.radius;
+        enabled = true;
+    }
+
+    if (!enabled) {
+        return;
+    }
+
+    strength = std::clamp(strength, 0.0, 5.0);
+    clamp = std::clamp(clamp, 0.0, 1.0);
+    radius = std::clamp(radius, 0.25, 4.0);
+
+    const QString shader = QStringLiteral(
+        "//!HOOK POSTKERNEL\n"
+        "//!BIND HOOKED\n\n"
+        "const float sharpen_strength = %1f;\n"
+        "const float sharpen_clamp = %2f;\n"
+        "const float sharpen_radius = %3f;\n\n"
+        "vec4 hook() {\n"
+        "    vec4 color = HOOKED_tex(HOOKED_pos);\n"
+        "    vec2 pt = sharpen_radius * HOOKED_pt;\n"
+        "    vec4 blur = (\n"
+        "        HOOKED_tex(HOOKED_pos + vec2(pt.x, 0.0)) +\n"
+        "        HOOKED_tex(HOOKED_pos - vec2(pt.x, 0.0)) +\n"
+        "        HOOKED_tex(HOOKED_pos + vec2(0.0, pt.y)) +\n"
+        "        HOOKED_tex(HOOKED_pos - vec2(0.0, pt.y)) +\n"
+        "        color) / 5.0;\n"
+        "    vec4 diff = clamp(color - blur, vec4(-sharpen_clamp), vec4(sharpen_clamp));\n"
+        "    return color + diff * sharpen_strength;\n"
+        "}\n")
+        .arg(QString::number(strength, 'f', 6))
+        .arg(QString::number(clamp, 'f', 6))
+        .arg(QString::number(radius, 'f', 6));
+
+    m_SharpenShaderSource = shader.toUtf8();
+
+    m_SharpenHook = pl_mpv_user_shader_parse(m_Vulkan->gpu,
+                                              m_SharpenShaderSource.constData(),
+                                              (size_t)m_SharpenShaderSource.size());
+    if (m_SharpenHook == nullptr) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "Failed to parse Vulkan sharpening shader");
+        m_SharpenShaderSource.clear();
+        return;
+    }
+
+    pl_options_add_hook(m_RenderOptions, m_SharpenHook);
+    m_SharpenHookIndex = m_RenderOptions->params.num_hooks - 1;
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "Vulkan renderer sharpening enabled via %s (strength=%f, clamp=%f, radius=%f)",
+                envOverride ? "PLVK_SHARPEN" : "preferences",
+                static_cast<float>(strength), static_cast<float>(clamp), static_cast<float>(radius));
+}
+
+void PlVkRenderer::configureColorAdjustments()
+{
+    if (m_RenderOptions == nullptr) {
+        return;
+    }
+
+    double saturation = m_ColorSaturation;
+
+    QByteArray env = qgetenv("PLVK_SATURATION");
+    if (!env.isEmpty()) {
+        bool ok = false;
+        double overrideVal = env.toDouble(&ok);
+        if (ok) {
+            saturation = overrideVal;
+        }
+        else {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "Invalid PLVK_SATURATION value '%s'", env.constData());
+        }
+    }
+
+    saturation = std::clamp(saturation, 0.0, 5.0);
+
+    m_RenderOptions->color_adjustment = pl_color_adjustment_neutral;
+    m_RenderOptions->color_adjustment.saturation = saturation;
+    m_RenderOptions->params.color_adjustment = &m_RenderOptions->color_adjustment;
+}
+
 bool PlVkRenderer::isExtensionSupportedByPhysicalDevice(VkPhysicalDevice device, const char *extensionName)
 {
     uint32_t extensionCount = 0;
@@ -361,6 +556,21 @@ bool PlVkRenderer::isExtensionSupportedByPhysicalDevice(VkPhysicalDevice device,
 
 bool PlVkRenderer::initialize(PDECODER_PARAMETERS params)
 {
+    if (params != nullptr) {
+        m_SharpenConfig.enabled = params->enableSharpenFilter;
+        m_SharpenConfig.strength = std::clamp(params->sharpenStrength, 0.0, 5.0);
+        m_SharpenConfig.clamp = std::clamp(params->sharpenClamp, 0.0, 1.0);
+        m_SharpenConfig.radius = std::clamp(params->sharpenRadius, 0.25, 4.0);
+        m_ColorSaturation = std::clamp(params->colorSaturation, 0.0, 5.0);
+    }
+    else {
+        m_SharpenConfig.enabled = false;
+        m_SharpenConfig.strength = 0.35;
+        m_SharpenConfig.clamp = 0.05;
+        m_SharpenConfig.radius = 1.0;
+        m_ColorSaturation = 1.0;
+    }
+
     m_Window = params->window;
 
     unsigned int instanceExtensionCount = 0;
@@ -482,6 +692,8 @@ bool PlVkRenderer::initialize(PDECODER_PARAMETERS params)
                      "pl_renderer_create() failed");
         return false;
     }
+
+    initializeRenderParams();
 
     // We only need an hwaccel device context if we're going to act as the backend renderer too
     if (m_HwAccelBackend) {
@@ -857,7 +1069,10 @@ void PlVkRenderer::renderFrame(AVFrame *frame)
     // Render the video image and overlays into the swapchain buffer
     targetFrame.num_overlays = (int)overlays.size();
     targetFrame.overlays = overlays.data();
-    if (!pl_render_image(m_Renderer, &mappedFrame, &targetFrame, &pl_render_fast_params)) {
+    const struct pl_render_params* renderParams = m_ActiveRenderParams != nullptr ?
+            m_ActiveRenderParams : &pl_render_fast_params;
+
+    if (!pl_render_image(m_Renderer, &mappedFrame, &targetFrame, renderParams)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "pl_render_image() failed");
         // NB: We must fallthrough to call pl_swapchain_submit_frame()

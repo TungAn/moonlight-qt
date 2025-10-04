@@ -2,6 +2,7 @@
 
 #include <QCommandLineParser>
 #include <QRegularExpression>
+#include <QtMath>
 
 #if defined(Q_OS_WIN)
 #include <qt_windows.h>
@@ -83,6 +84,16 @@ public:
             showError(QString("Invalid %1 value: %2").arg(name, value(name)));
         }
         return intValue;
+    }
+
+    double getDoubleOption(QString name) const
+    {
+        bool ok;
+        double doubleValue = value(name).toDouble(&ok);
+        if (!ok) {
+            showError(QString("Invalid %1 value: %2").arg(name, value(name)));
+        }
+        return doubleValue;
     }
 
     bool getToggleOptionValue(QString name, bool defaultValue) const
@@ -366,6 +377,11 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
     parser.addToggleOption("swap-gamepad-buttons", "swap A/B and X/Y gamepad buttons (Nintendo-style)");
     parser.addToggleOption("keep-awake", "prevent display sleep while streaming");
     parser.addToggleOption("performance-overlay", "show performance overlay");
+    parser.addToggleOption("vulkan-sharpen", "Vulkan sharpening filter");
+    parser.addValueOption("sharpen-strength", "sharpen strength (0.0 - 5.0)");
+    parser.addValueOption("sharpen-clamp", "sharpen clamp (0.0 - 1.0)");
+    parser.addValueOption("sharpen-radius", "sharpen radius (0.25 - 4.0)");
+    parser.addValueOption("color-saturation", "color saturation (0.0 - 5.0)");
     parser.addToggleOption("hdr", "HDR streaming");
     parser.addToggleOption("yuv444", "YUV 4:4:4 sampling, if supported");
     parser.addChoiceOption("capture-system-keys", "capture system key combos", m_CaptureSysKeysModeMap.keys());
@@ -484,6 +500,36 @@ void StreamCommandLineParser::parse(const QStringList &args, StreamingPreference
 
     // Resolve --performance-overlay and --no-performance-overlay options
     preferences->showPerformanceOverlay = parser.getToggleOptionValue("performance-overlay", preferences->showPerformanceOverlay);
+
+    // Resolve Vulkan sharpening related options
+    preferences->enableSharpenFilter = parser.getToggleOptionValue("vulkan-sharpen", preferences->enableSharpenFilter);
+
+    if (parser.isSet("sharpen-strength")) {
+        double strength = parser.getDoubleOption("sharpen-strength");
+        preferences->sharpenStrength = qBound(0.0, strength, 5.0);
+        if (preferences->sharpenStrength > 0.0) {
+            preferences->enableSharpenFilter = true;
+        }
+    }
+
+    if (parser.isSet("sharpen-clamp")) {
+        double clamp = parser.getDoubleOption("sharpen-clamp");
+        preferences->sharpenClamp = qBound(0.0, clamp, 1.0);
+        preferences->enableSharpenFilter = true;
+    }
+
+    if (parser.isSet("sharpen-radius")) {
+        double radius = parser.getDoubleOption("sharpen-radius");
+        preferences->sharpenRadius = qBound(0.25, radius, 4.0);
+        if (preferences->sharpenRadius > 0.0) {
+            preferences->enableSharpenFilter = true;
+        }
+    }
+
+    if (parser.isSet("color-saturation")) {
+        double saturation = parser.getDoubleOption("color-saturation");
+        preferences->colorSaturation = qBound(0.0, saturation, 5.0);
+    }
 
     // Resolve --hdr and --no-hdr options
     preferences->enableHdr = parser.getToggleOptionValue("hdr", preferences->enableHdr);

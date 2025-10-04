@@ -475,7 +475,7 @@ public:
 
             [contentView addSubview: m_StreamView];
 
-            if (params->enableFramePacing) {
+            if (params->enableFramePacing && params->enableVsync) {
                 if (!initializeVsyncCallback(&info)) {
                     return false;
                 }

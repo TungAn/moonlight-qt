@@ -464,9 +464,9 @@ Flickable {
                         NavigableDialog {
                             function isInputValid() {
                                 // If we have text that isn't valid, reject the input.
-                                if (!fpsField.acceptableInput && fpsField.text) {
-                                    return false
-                                }
+                                //if (!fpsField.acceptableInput && fpsField.text) {
+                                  //  return false
+                                //}
 
                                 // The textbox needs to have text or placeholder text
                                 if (!fpsField.text && !fpsField.placeholderText) {
@@ -531,7 +531,7 @@ Flickable {
                                 RowLayout {
                                     TextField {
                                         id: fpsField
-                                        maximumLength: 4
+                                        maximumLength: 8
                                         inputMethodHints: Qt.ImhDigitsOnly
                                         placeholderText: fpsListModel.get(fpsComboBox.currentIndex).video_fps
                                         validator: IntValidator{bottom:10; top:9999}
@@ -1681,6 +1681,116 @@ Flickable {
                                       qsTr("Good for streaming desktop and text-heavy games, but not recommended for fast-paced games.")
                                     :
                                       qsTr("YUV 4:4:4 is not supported on this PC.")
+                }
+
+                CheckBox {
+                    id: enableSharpenFilterCheck
+                    width: parent.width
+                    text: qsTr("Enable Vulkan sharpening filter")
+                    font.pointSize: 12
+
+                    checked: StreamingPreferences.enableSharpenFilter
+                    onCheckedChanged: StreamingPreferences.enableSharpenFilter = checked
+
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 5000
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Adds a lightweight sharpening pass when using the Vulkan renderer. Other renderers ignore this setting.")
+                }
+
+                Column {
+                    width: parent.width
+                    spacing: 6
+                    enabled: enableSharpenFilterCheck.checked
+                    opacity: enableSharpenFilterCheck.checked ? 1.0 : 0.5
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("Takes effect the next time a Vulkan stream starts.")
+                        font.pointSize: 9
+                        wrapMode: Text.Wrap
+                    }
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("Sharpen strength: %1").arg(strengthSlider.value.toFixed(2))
+                        font.pointSize: 11
+                    }
+
+                    Slider {
+                        id: strengthSlider
+                        width: parent.width
+                        from: 0.0
+                        to: 5.0
+                        stepSize: 0.05
+                        value: StreamingPreferences.sharpenStrength
+                        onValueChanged: {
+                            if (Math.abs(StreamingPreferences.sharpenStrength - value) > 0.0001)
+                                StreamingPreferences.sharpenStrength = value
+                        }
+                    }
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("Clamp: %1").arg(clampSlider.value.toFixed(3))
+                        font.pointSize: 11
+                    }
+
+                    Slider {
+                        id: clampSlider
+                        width: parent.width
+                        from: 0.0
+                        to: 1.0
+                        stepSize: 0.01
+                        value: StreamingPreferences.sharpenClamp
+                        onValueChanged: {
+                            if (Math.abs(StreamingPreferences.sharpenClamp - value) > 0.0001)
+                                StreamingPreferences.sharpenClamp = value
+                        }
+                    }
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("Radius: %1").arg(radiusSlider.value.toFixed(2))
+                        font.pointSize: 11
+                    }
+
+                    Slider {
+                        id: radiusSlider
+                        width: parent.width
+                        from: 0.25
+                        to: 4.0
+                        stepSize: 0.05
+                        value: StreamingPreferences.sharpenRadius
+                        onValueChanged: {
+                            if (Math.abs(StreamingPreferences.sharpenRadius - value) > 0.0001)
+                                StreamingPreferences.sharpenRadius = value
+                        }
+                    }
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("Color saturation: %1").arg(colorSaturationSlider.value.toFixed(2))
+                        font.pointSize: 11
+                    }
+
+                    Slider {
+                        id: colorSaturationSlider
+                        width: parent.width
+                        from: 0.0
+                        to: 3.0
+                        stepSize: 0.05
+                        value: StreamingPreferences.colorSaturation
+                        onValueChanged: {
+                            if (Math.abs(StreamingPreferences.colorSaturation - value) > 0.0001)
+                                StreamingPreferences.colorSaturation = value
+                        }
+
+                        ToolTip.delay: 1000
+                        ToolTip.timeout: 5000
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("Higher values produce more vivid colors. Set to 1.0 for the original saturation.")
+                    }
                 }
 
                 CheckBox {

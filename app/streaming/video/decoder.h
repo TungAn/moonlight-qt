@@ -43,6 +43,11 @@ typedef struct _DECODER_PARAMETERS {
     bool enableVsync;
     bool enableFramePacing;
     bool testOnly;
+    bool enableSharpenFilter;
+    double sharpenStrength;
+    double sharpenClamp;
+    double sharpenRadius;
+    double colorSaturation;
 } DECODER_PARAMETERS, *PDECODER_PARAMETERS;
 
 #define WINDOW_STATE_CHANGE_SIZE 0x01

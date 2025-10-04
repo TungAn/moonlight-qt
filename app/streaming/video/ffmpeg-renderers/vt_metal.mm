@@ -16,6 +16,9 @@
 #import <AVFoundation/AVFoundation.h>
 #import <dispatch/dispatch.h>
 #import <Metal/Metal.h>
+
+#include <algorithm>
+#include <cstring>
 #import <MetalKit/MetalKit.h>
 
 extern "C" {
@@ -32,6 +35,13 @@ struct ParamBuffer
 {
     CscParams cscParams;
     float bitnessScaleFactor;
+    float sharpenStrength;
+    float sharpenClamp;
+    float sharpenRadius;
+    float sharpenEnabled;
+    vector_float2 texelSize;
+    float colorSaturation;
+    float padding;
 };
 
 static const CscParams k_CscParams_Bt601Lim = {
@@ -138,7 +148,12 @@ public:
           m_LastDrawableHeight(-1),
           m_PresentationMutex(SDL_CreateMutex()),
           m_PresentationCond(SDL_CreateCond()),
-          m_PendingPresentationCount(0)
+          m_PendingPresentationCount(0),
+          m_ParamValues({}),
+          m_InitialSharpenEnabled(false),
+          m_InitialSharpenStrength(0.0f),
+          m_InitialSharpenClamp(0.05f),
+          m_InitialSharpenRadius(1.0f)
     {
     }
 
@@ -328,7 +343,7 @@ public:
         bool fullRange = isFrameFullRange(frame);
         if (colorspace != m_LastColorSpace || fullRange != m_LastFullRange) {
             CGColorSpaceRef newColorSpace;
-            ParamBuffer paramBuffer;
+            ParamBuffer paramBuffer = {};
 
             // Free any unpresented drawable since we're changing pixel formats
             discardNextDrawable();
@@ -360,6 +375,7 @@ public:
             }
 
             paramBuffer.bitnessScaleFactor = getBitnessScaleFactor(frame);
+            updateSharpenParams(paramBuffer, frame->width, frame->height);
 
             // The CAMetalLayer retains the CGColorSpace
             CGColorSpaceRelease(newColorSpace);
@@ -373,6 +389,8 @@ public:
                              "Failed to create CSC parameters buffer");
                 return false;
             }
+
+            m_ParamValues = paramBuffer;
 
             int planes = getFramePlaneCount(frame);
             SDL_assert(planes == 2 || planes == 3);
@@ -503,6 +521,13 @@ public:
         // Don't proceed with rendering if we don't have a drawable
         if (m_NextDrawable == nullptr) {
             return;
+        }
+
+        m_ParamValues.bitnessScaleFactor = getBitnessScaleFactor(frame);
+        updateSharpenParams(m_ParamValues, frame->width, frame->height);
+        if (m_CscParamsBuffer != nullptr) {
+            memcpy([m_CscParamsBuffer contents], &m_ParamValues, sizeof(m_ParamValues));
+            [m_CscParamsBuffer didModifyRange:NSMakeRange(0, sizeof(m_ParamValues))];
         }
 
         std::array<CVMetalTextureRef, MAX_VIDEO_PLANES> cvMetalTextures;
@@ -648,7 +673,7 @@ public:
         [commandBuffer commit];
 
         // Wait for the command buffer to complete and free our CVMetalTextureCache references
-        [commandBuffer waitUntilCompleted];
+        // [commandBuffer waitUntilCompleted];
 
         [m_NextDrawable release];
         m_NextDrawable = nullptr;
@@ -696,6 +721,11 @@ public:
         int err;
 
         m_Window = params->window;
+
+        m_InitialSharpenEnabled = params->enableSharpenFilter;
+        m_InitialSharpenStrength = std::clamp(static_cast<float>(params->sharpenStrength), 0.0f, 5.0f);
+        m_InitialSharpenClamp = std::clamp(static_cast<float>(params->sharpenClamp), 0.0f, 1.0f);
+        m_InitialSharpenRadius = std::clamp(static_cast<float>(params->sharpenRadius), 0.25f, 4.0f);
 
         id<MTLDevice> device = getMetalDevice();
         if (!device) {
@@ -942,6 +972,46 @@ private:
     SDL_mutex* m_PresentationMutex;
     SDL_cond* m_PresentationCond;
     int m_PendingPresentationCount;
+    ParamBuffer m_ParamValues;
+    bool m_InitialSharpenEnabled;
+    float m_InitialSharpenStrength;
+    float m_InitialSharpenClamp;
+    float m_InitialSharpenRadius;
+
+    void updateSharpenParams(ParamBuffer& buffer, int width, int height)
+    {
+        StreamingPreferences* prefs = StreamingPreferences::get();
+        bool enabled = m_InitialSharpenEnabled;
+        double strength = m_InitialSharpenStrength;
+        double clamp = m_InitialSharpenClamp;
+        double radius = m_InitialSharpenRadius;
+        double saturation = 1.0;
+
+        if (prefs != nullptr) {
+            enabled = prefs->enableSharpenFilter;
+            strength = prefs->sharpenStrength;
+            clamp = prefs->sharpenClamp;
+            radius = prefs->sharpenRadius;
+            saturation = prefs->colorSaturation;
+        }
+
+        strength = std::clamp(strength, 0.0, 5.0);
+        clamp = std::clamp(clamp, 0.0, 1.0);
+        radius = std::clamp(radius, 0.25, 4.0);
+        saturation = std::clamp(saturation, 0.0, 5.0);
+
+        buffer.sharpenEnabled = enabled ? 1.0f : 0.0f;
+        buffer.sharpenStrength = enabled ? static_cast<float>(strength) : 0.0f;
+        buffer.sharpenClamp = static_cast<float>(clamp);
+        buffer.sharpenRadius = static_cast<float>(radius);
+
+        buffer.colorSaturation = static_cast<float>(saturation);
+
+        const float invWidth = width > 0 ? 1.0f / static_cast<float>(width) : 0.0f;
+        const float invHeight = height > 0 ? 1.0f / static_cast<float>(height) : 0.0f;
+        buffer.texelSize = (vector_float2){ invWidth, invHeight };
+        buffer.padding = 0.0f;
+    }
 };
 
 IFFmpegRenderer* VTMetalRendererFactory::createRenderer(bool hwAccel) {

@@ -1,0 +1,20 @@
+executing config test SL
++ cd /Users/user/Documents/moonlight-qt/config.tests/SL && MAKEFLAGS= make distclean
+> /opt/homebrew/bin/qmake6 -o Makefile SL.pro -spec /opt/homebrew/share/qt/mkspecs/macx-clang 'CONFIG -= qt debug_and_release app_bundle lib_bundle'
+> rm -f main.o
+> rm -f *~ core *.core
+> rm -f SL 
+> rm -f Makefile
++ cd /Users/user/Documents/moonlight-qt/config.tests/SL && /opt/homebrew/bin/qmake6  -spec /opt/homebrew/share/qt/mkspecs/macx-clang "CONFIG -= qt debug_and_release app_bundle lib_bundle" /Users/user/Documents/moonlight-qt/config.tests/SL
++ cd /Users/user/Documents/moonlight-qt/config.tests/SL && MAKEFLAGS= make
+> /Library/Developer/CommandLineTools/usr/bin/clang++ -c -pipe -stdlib=libc++ -O2 -std=gnu++1z  -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -mmacosx-version-min=14.0 -Wall -Wextra  -I. -I/opt/homebrew/share/qt/mkspecs/macx-clang -o main.o main.cpp
+> main.cpp:1:10: fatal error: 'SLVideo.h' file not found
+>     1 | #include <SLVideo.h>
+>       |          ^~~~~~~~~~~
+> 1 error generated.
+> make: *** [main.o] Error 1
+test SL FAILED
+executing config test EGL
++ cd /Users/user/Documents/moonlight-qt/config.tests/EGL && /opt/homebrew/bin/qmake6  -spec /opt/homebrew/share/qt/mkspecs/macx-clang "CONFIG -= qt debug_and_release app_bundle lib_bundle" /Users/user/Documents/moonlight-qt/config.tests/EGL
+> Project ERROR: sdl2 development package not found
+test EGL FAILED

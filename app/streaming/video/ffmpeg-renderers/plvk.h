@@ -7,8 +7,12 @@
 #endif
 
 #include <libplacebo/log.h>
+#include <libplacebo/options.h>
 #include <libplacebo/renderer.h>
+#include <libplacebo/shaders/custom.h>
 #include <libplacebo/vulkan.h>
+
+#include <QByteArray>
 
 class PlVkRenderer : public IFFmpegRenderer {
 public:
@@ -44,6 +48,17 @@ private:
     bool isPresentModeSupportedByPhysicalDevice(VkPhysicalDevice device, VkPresentModeKHR presentMode);
     bool isColorSpaceSupportedByPhysicalDevice(VkPhysicalDevice device, VkColorSpaceKHR colorSpace);
     bool isSurfacePresentationSupportedByPhysicalDevice(VkPhysicalDevice device);
+    bool initializeRenderParams();
+    void configureSharpenHook();
+    void configureColorAdjustments();
+
+    struct SharpenConfig {
+        bool enabled = false;
+        double strength = 0.35;
+        double clamp = 0.05;
+        double radius = 1.0;
+    } m_SharpenConfig;
+    double m_ColorSaturation = 1.0;
 
     // The backend renderer if we're frontend-only
     IFFmpegRenderer* m_Backend;
@@ -59,6 +74,11 @@ private:
     pl_vulkan m_Vulkan = nullptr;
     pl_swapchain m_Swapchain = nullptr;
     pl_renderer m_Renderer = nullptr;
+    pl_options m_RenderOptions = nullptr;
+    const struct pl_hook* m_SharpenHook = nullptr;
+    int m_SharpenHookIndex = -1;
+    QByteArray m_SharpenShaderSource;
+    const struct pl_render_params* m_ActiveRenderParams;
     pl_tex m_Textures[PL_MAX_PLANES] = {};
     pl_color_space m_LastColorspace = {};
 

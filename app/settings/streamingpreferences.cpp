@@ -43,6 +43,11 @@
 #define SER_PACKETSIZE "packetsize"
 #define SER_DETECTNETBLOCKING "detectnetblocking"
 #define SER_SHOWPERFOVERLAY "showperfoverlay"
+#define SER_VULKAN_SHARPEN_ENABLED "vulkanSharpenEnabled"
+#define SER_VULKAN_SHARPEN_STRENGTH "vulkanSharpenStrength"
+#define SER_VULKAN_SHARPEN_CLAMP "vulkanSharpenClamp"
+#define SER_VULKAN_SHARPEN_RADIUS "vulkanSharpenRadius"
+#define SER_COLOR_SATURATION "colorSaturation"
 #define SER_SWAPMOUSEBUTTONS "swapmousebuttons"
 #define SER_MUTEONFOCUSLOSS "muteonfocusloss"
 #define SER_BACKGROUNDGAMEPAD "backgroundgamepad"
@@ -140,6 +145,15 @@ void StreamingPreferences::reload()
     gamepadMouse = settings.value(SER_GAMEPADMOUSE, true).toBool();
     detectNetworkBlocking = settings.value(SER_DETECTNETBLOCKING, true).toBool();
     showPerformanceOverlay = settings.value(SER_SHOWPERFOVERLAY, false).toBool();
+    enableSharpenFilter = settings.value(SER_VULKAN_SHARPEN_ENABLED, false).toBool();
+    sharpenStrength = settings.value(SER_VULKAN_SHARPEN_STRENGTH, 0.35).toDouble();
+    sharpenClamp = settings.value(SER_VULKAN_SHARPEN_CLAMP, 0.05).toDouble();
+    sharpenRadius = settings.value(SER_VULKAN_SHARPEN_RADIUS, 1.0).toDouble();
+    sharpenStrength = qBound(0.0, sharpenStrength, 5.0);
+    sharpenClamp = qBound(0.0, sharpenClamp, 1.0);
+    sharpenRadius = qBound(0.25, sharpenRadius, 4.0);
+    colorSaturation = settings.value(SER_COLOR_SATURATION, 1.0).toDouble();
+    colorSaturation = qBound(0.0, colorSaturation, 5.0);
     packetSize = settings.value(SER_PACKETSIZE, 0).toInt();
     swapMouseButtons = settings.value(SER_SWAPMOUSEBUTTONS, false).toBool();
     muteOnFocusLoss = settings.value(SER_MUTEONFOCUSLOSS, false).toBool();
@@ -339,6 +353,11 @@ void StreamingPreferences::save()
     settings.setValue(SER_PACKETSIZE, packetSize);
     settings.setValue(SER_DETECTNETBLOCKING, detectNetworkBlocking);
     settings.setValue(SER_SHOWPERFOVERLAY, showPerformanceOverlay);
+    settings.setValue(SER_VULKAN_SHARPEN_ENABLED, enableSharpenFilter);
+    settings.setValue(SER_VULKAN_SHARPEN_STRENGTH, sharpenStrength);
+    settings.setValue(SER_VULKAN_SHARPEN_CLAMP, sharpenClamp);
+    settings.setValue(SER_VULKAN_SHARPEN_RADIUS, sharpenRadius);
+    settings.setValue(SER_COLOR_SATURATION, colorSaturation);
     settings.setValue(SER_AUDIOCFG, static_cast<int>(audioConfig));
     settings.setValue(SER_HDR, enableHdr);
     settings.setValue(SER_YUV444, enableYUV444);
